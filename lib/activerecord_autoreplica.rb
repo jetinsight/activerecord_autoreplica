@@ -59,14 +59,13 @@ module AutoReplica
   #
   # @param replica_connection_pool[ActiveRecord::ConnectionAdapters::ConnectionPool] an ActiveRecord connection pool instance
   # @return [void]
-  def self.using_read_replica_pool(replica_connection_pool)
-    in_replica_context(replica_connection_pool){ yield }
+  def self.using_read_replica_pool(replica_connection_pool, read_replica_ar_class = nil)
+    in_replica_context(replica_connection_pool, ConnectionHandler, read_replica_ar_class){ yield }
   end
 
-  def self.in_replica_context(handler_params, handler_class=ConnectionHandler)
+  def self.in_replica_context(handler_params, handler_class=ConnectionHandler, read_replica_ar_class = nil)
     original_connection_handler = ActiveRecord::Base.connection_handler
-    base_connection = ActiveRecord::Base.retrieve_connection
-    custom_handler = handler_class.new(original_connection_handler, handler_params, base_connection)
+    custom_handler = handler_class.new(original_connection_handler, handler_params, read_replica_ar_class)
     begin
       ActiveRecord::Base.connection_handler = custom_handler
       yield
@@ -79,19 +78,20 @@ module AutoReplica
   # The connection handler that wraps the ActiveRecord one. Everything gets forwarded to the wrapped
   # object, but a "spiked" connection adapter gets returned from retrieve_connection.
   class ConnectionHandler # a proxy for ActiveRecord::ConnectionAdapters::ConnectionHandler
-    def initialize(original_handler, read_pool, base_connection = nil)
+    def initialize(original_handler, read_pool, read_replica_ar_class = nil)
       @original_handler = original_handler
       @read_pool = read_pool
-      @base_connection = base_connection
+      @read_replica_ar_class = read_replica_ar_class
     end
 
     # Overridden method which gets called by ActiveRecord to get a connection related to a specific
     # ActiveRecord::Base subclass.
     def retrieve_connection(for_ar_class)
+      p "Unexpected ar_class: #{for_ar_class}" unless ['primary', 'FlightData::Base'].include? for_ar_class
       connection_for_writes = @original_handler.retrieve_connection(for_ar_class)
-      # we only want to switch to the read replica connection if the original handler connection matches the ActiveRecord::Base connection
-      # This ensures we stay on the correct DB when calling select from a DB other than primary
-      connection_for_reads = @base_connection&.object_id == connection_for_writes&.object_id ? @read_pool.connection : connection_for_writes
+      # we only want to switch to the read replica connection if the read replica class matches for_ar_class
+      # In most cases, this will be 'primary'
+      connection_for_reads = @read_replica_ar_class.nil? || @read_replica_ar_class == for_ar_class ? @read_pool.connection : connection_for_writes
       Adapter.new(connection_for_writes, connection_for_reads)
     end
 
