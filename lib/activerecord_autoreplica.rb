@@ -87,6 +87,7 @@ module AutoReplica
     # Overridden method which gets called by ActiveRecord to get a connection related to a specific
     # ActiveRecord::Base subclass.
     def retrieve_connection(for_ar_class)
+      p "This ar_class: #{for_ar_class}"
       p "Unexpected ar_class: #{for_ar_class}" unless ['primary', 'FlightData::Base'].include? for_ar_class
       connection_for_writes = @original_handler.retrieve_connection(for_ar_class)
       # we only want to switch to the read replica connection if the read replica class matches for_ar_class
