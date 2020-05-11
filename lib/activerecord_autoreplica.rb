@@ -193,10 +193,12 @@ module AutoReplica
     # DatabaseStatements. Therefore we can obtain a list of those methods (that we want to override)
     # by grepping the instance method names of the DatabaseStatements module.
     select_methods = ActiveRecord::ConnectionAdapters::DatabaseStatements.instance_methods.grep(/^select_/)
+    select_methods.push(:raw_connection)
     # ...and then for each of those "select_something" methods we can make a method override
     # that will redirect the method to the read connection.
     select_methods.each do | select_method_name |
       define_method(select_method_name) do |*method_arguments|
+        p "select method name: #{select_method_name}"
         @read_connection.send(select_method_name, *method_arguments)
       end
     end
